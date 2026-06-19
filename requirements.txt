@@ -3,3 +3,4 @@ pymorphy2
 python-docx
 langchain-openai
 openai
+gunicorn
