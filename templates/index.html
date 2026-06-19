@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Генератор диминутивов</title>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        input {
+            width: 300px;
+            padding: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+
+        th {
+            background: #f3f3f3;
+        }
+
+    </style>
+
+</head>
+<body>
+
+<h1>Генератор диминутивов</h1>
+
+<form method="post">
+
+    <input
+            type="text"
+            name="word"
+            placeholder="Введите слово"
+            value="{{ word }}"
+            required
+    >
+
+    <button type="submit">
+        Найти
+    </button>
+
+</form>
+
+{% if result %}
+
+<h2>
+    Слово: {{result.lemma}}
+</h2>
+
+<table>
+
+    <tr>
+        <th>Форма</th>
+        <th>Суффикс</th>
+        <th>Словарная</th>
+        <th>GPT</th>
+        <th>Баллы</th>
+    </tr>
+
+    {% for item in result.diminutives %}
+
+    <tr>
+
+        <td>{{ item.form }}</td>
+
+        <td>{{ item.suffix }}</td>
+
+        <td>{{ item.dictionary_word }}</td>
+
+        <td>{{ item.source_gpt }}</td>
+
+        <td>{{ item.score }}</td>
+
+    </tr>
+
+    {% endfor %}
+
+</table>
+
+{% endif %}
+
+</body>
+</html>
