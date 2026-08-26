@@ -1,0 +1,48 @@
+{
+  "актриса": {
+    "актриска":     {"exists": true,  "connotation": "пренебрежительное", "accepted_connotations": ["пренебрежительное", "нейтральное"], "source": "school_research (описание: пренебрежительное) + подтверждено экспериментом (студенты: нейтральное=11, пренебрежительное=5) - оба источника согласны, что пренебрежительное входит в допустимые"},
+    "актрисочка":   {"exists": true,  "connotation": "ласкательное", "accepted_connotations": ["ласкательное", "нейтральное"], "source": "school_research + подтверждено экспериментом (студенты: ласкательное=14, нейтральное=5, пренебрежительное=3)"},
+    "актрисонька":  {"exists": true,  "connotation": "ласкательное",      "source": "school_research"},
+    "актрисушка":   {"exists": true,  "connotation": "ласкательное",      "source": "school_research (помета 'окказион.' - редкое, но реальное)"},
+    "актрисулька":  {"exists": true,  "connotation": "пренебрежительное", "source": "school_research"},
+    "актрисенька":  {"exists": null,  "connotation": null, "source": "неподтверждено - вариант actrisonka с другой гласной"},
+    "актрисечка":   {"exists": false, "connotation": null, "source": "вероятный дубль actrisochka, не подтверждено"},
+    "актрисонка":   {"exists": null,  "connotation": null, "source": "неподтверждено - пренебрежительный вариант без мягкого знака"},
+    "актрисёшка":   {"exists": null,  "connotation": null, "source": "неподтверждено"},
+    "актрисища":    {"exists": null,  "connotation": null, "source": "неподтверждено - редкий аугментатив"}
+  },
+  "рука": {
+    "ручка":     {"exists": true,  "connotation": "нейтральное",      "source": "общеизвестное слово"},
+    "рученька":  {"exists": true,  "connotation": "ласкательное",     "source": "общеизвестное слово"},
+    "ручечка":   {"exists": true,  "connotation": "ласкательное",     "source": "общеизвестное слово"},
+    "ручонка":   {"exists": true,  "connotation": "пренебрежительное","source": "общеизвестное слово"},
+    "ручища":    {"exists": true,  "connotation": "нейтральное",      "source": "общеизвестное слово (аугментатив)"},
+    "рукочка":   {"exists": false, "connotation": null, "source": "нет чередования к->ч, ошибочная форма"},
+    "рукенька":  {"exists": false, "connotation": null, "source": "нет чередования к->ч, ошибочная форма"},
+    "рукечка":   {"exists": false, "connotation": null, "source": "нет чередования к->ч, ошибочная форма"},
+    "рукушка":   {"exists": false, "connotation": null, "source": "нет чередования к->ч, ошибочная форма"},
+    "рукулька":  {"exists": false, "connotation": null, "source": "суффикс -улька для 'рука' не подтверждён"},
+    "рукёшка":   {"exists": false, "connotation": null, "source": "нет чередования к->ч, ошибочная форма"},
+    "руконка":   {"exists": false, "connotation": null, "source": "нет чередования к->ч, должно быть 'ручонка'"},
+    "руконька":  {"exists": false, "connotation": null, "source": "нет чередования к->ч, должно быть 'рученька'"},
+    "рукища":    {"exists": false, "connotation": null, "source": "дубль без чередования, корректная форма 'ручища'"},
+    "рукка":     {"exists": false, "connotation": null, "source": "очевидно некорректная форма"},
+    "ручулька":  {"exists": false, "connotation": null, "source": "суффикс -улька для 'рука' не подтверждён"},
+    "ручушка":   {"exists": null,  "connotation": null, "source": "неподтверждено"},
+    "ручёшка":   {"exists": null,  "connotation": null, "source": "неподтверждено"},
+    "ручонька":  {"exists": false,  "connotation": null, "source": "не существует — для 'рука' закреплена только форма 'рученька' (-еньк-), а не 'ручонька' (-оньк-); выбор между этими орфографическими вариантами лексически закреплён за конкретным словом, а не чередуется механически"}
+  },
+  "дождь": {
+    "дождик":    {"exists": true,  "connotation": "нейтральное",  "source": "общеизвестное слово"},
+    "дождичек":  {"exists": true,  "connotation": "ласкательное", "source": "общеизвестное слово"},
+    "дождище":   {"exists": true,  "connotation": "нейтральное",  "source": "общеизвестное слово ('сильный дождь')"},
+    "дождек":    {"exists": false, "connotation": null, "source": "неверный орфографический вариант, должно быть 'дождёк'"},
+    "дождонок":  {"exists": false, "connotation": null, "source": "суффикс -онок неприменим по смыслу к явлению природы"},
+    "дождёнок":  {"exists": false, "connotation": null, "source": "суффикс -ёнок неприменим по смыслу к явлению природы"},
+    "дождец":    {"exists": null,  "connotation": null, "source": "неподтверждено"},
+    "дождок":    {"exists": null,  "connotation": null, "source": "неподтверждено"},
+    "дождчик":   {"exists": null,  "connotation": null, "source": "неподтверждено"},
+    "дождёк":    {"exists": null,  "connotation": null, "source": "неподтверждено, менее употребительно чем дождик"},
+    "дождишко":  {"exists": null,  "connotation": null, "source": "неподтверждено, но правдоподобно (плохонький дождик)"}
+  }
+}
