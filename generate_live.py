@@ -209,11 +209,11 @@ def make_clients() -> tuple[GigaChatClient, object]:
     from langchain_openai import ChatOpenAI
 
     gigachat_client = GigaChatClient(
-        authorization_key="MDE5ZjE0NzgtZDQxNy03MzZkLTgzZDQtYTQyZjViMWE1MWExOjFhOGYxZTI0LTE2MzMtNDMzNS1hNzdhLTMyZjdlMmMwMGRlZA==",
+        authorization_key="",
         model="GigaChat-2",
     )
     gpt_llm = ChatOpenAI(
-        api_key="sk-dZ_Sgbz7nnyY8Nc8KdCzcg",
+        api_key="",
         temperature=0,
         model="gpt-4o-mini",
         base_url="https://api.vsellm.ru/",
