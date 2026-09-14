@@ -6,7 +6,8 @@ GigaChat-2 должны согласиться) + постфильтр чере�
 
 Пайплайн: gen_candidates -> [gpt-4o-mini И GigaChat-2 параллельно]
 -> пересечение (AND) -> постфильтр чередований -> подтверждение словарём
-(только восстановление ложноотклонённых).
+(только восстановление ложноотклонённых) -> композитный score уверенности
+(confidence_score.py) -> разделение на "принято" / "на экспертную проверку".
 
 Самодостаточный модуль — вся логика (включая то, что раньше жило в
 build_dictionary.py) здесь. Отдельный build_dictionary.py с пакетной
@@ -24,6 +25,7 @@ from filter_gigachat import GigaChatClient, filter_candidates as filter_gigachat
 from filter_gpt import filter_candidates as filter_gpt_candidates
 from palatalization_postfilter import apply_palatalization_postfilter
 from opencorpora_check import cross_check_with_dictionary
+from confidence_score import compute_confidence, classify_for_pipeline, resolve_suffix_pair_conflicts
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +94,12 @@ def merge_and(gpt_result: list[dict], gc_result: list[dict]) -> list[dict]:
     Коннотация: если обе модели согласны — берём её; если расходятся —
     сохраняем обе как список (решение за постфильтром/человеком дальше),
     вместо того чтобы произвольно отдавать предпочтение одной модели.
+
+    Индивидуальные вердикты каждой модели (gpt_exists/gc_exists/
+    gpt_connotation/gc_connotation) сохраняются ОТДЕЛЬНО от смёрженного
+    both_exist/connotation — это нужно для compute_confidence()
+    (confidence_score.py), которому важно различать "обе согласны" от
+    "разногласие", а это теряется при схлопывании в единый bool.
     """
     gc_by_form = {r["form"]: r for r in gc_result}
     merged = []
@@ -115,14 +123,48 @@ def merge_and(gpt_result: list[dict], gc_result: list[dict]) -> list[dict]:
             "exists": both_exist,
             "connotation": connotation if both_exist else None,
             "note": gpt_r["note"],
+            "gpt_exists": gpt_r["exists"],
+            "gc_exists": gc_exists,
+            "gpt_connotation": gpt_r["connotation"],
+            "gc_connotation": gc_r["connotation"] if gc_r else None,
         })
 
     return merged
 
 
+def attach_confidence(final_result: list[dict]) -> list[dict]:
+    """
+    Добавляет к каждой записи поля "confidence" (score/label/reasons из
+    confidence_score.compute_confidence) и "review_channel"
+    ("accepted"/"needs_review"/"rejected" из classify_for_pipeline).
+
+    КРИТИЧЕСКИ ВАЖНО: НЕ меняет поле "exists" ни для одной записи.
+    review_channel="accepted" присваивается ИСКЛЮЧИТЕЛЬНО на основе уже
+    принятого пайплайном exists=True (результат AND + постфильтр +
+    словарь, без изменений) — score используется только для того, чтобы
+    разложить остальное (exists=False) по "needs_review"/"rejected",
+    а не для того, чтобы задним числом включить в основной вывод формы,
+    которые AND отклонил. См. classify_for_pipeline() в confidence_score.py.
+    """
+    for r in final_result:
+        conf = compute_confidence(
+            gpt_exists=r.get("gpt_exists"),
+            gc_exists=r.get("gc_exists"),
+            gpt_connotation=r.get("gpt_connotation"),
+            gc_connotation=r.get("gc_connotation"),
+            in_opencorpora=r.get("in_opencorpora", False),
+            postfilter_rejected=r.get("postfilter_rejected", False),
+        )
+        r["confidence"] = conf
+        r["review_channel"] = classify_for_pipeline(final_exists=r["exists"], confidence=conf)
+    return final_result
+
+
 def generate_diminutives(gigachat_client: GigaChatClient, gpt_llm, word: str, force: bool = False) -> dict:
     """
-    Возвращает {"word": ..., "forms": [...только exists=True...],
+    Возвращает {"word": ..., "forms": [...только exists=True, как и
+    раньше...], "needs_review": [...НОВОЕ: разногласие LLM, средний
+    score, НЕ показывается пользователю по умолчанию...],
     "total_candidates": N, "accepted_count": M, "already_diminutive": bool,
     "message": str|None}.
 
@@ -150,6 +192,7 @@ def generate_diminutives(gigachat_client: GigaChatClient, gpt_llm, word: str, fo
             return {
                 "word": word,
                 "forms": [],
+                "needs_review": [],
                 "total_candidates": 0,
                 "accepted_count": 0,
                 "already_diminutive": True,
@@ -159,7 +202,8 @@ def generate_diminutives(gigachat_client: GigaChatClient, gpt_llm, word: str, fo
     candidates = gen_candidates(word)
     if not candidates:
         return {
-            "word": word, "forms": [], "total_candidates": 0, "accepted_count": 0,
+            "word": word, "forms": [], "needs_review": [],
+            "total_candidates": 0, "accepted_count": 0,
             "already_diminutive": False, "message": None,
         }
 
@@ -169,12 +213,17 @@ def generate_diminutives(gigachat_client: GigaChatClient, gpt_llm, word: str, fo
     merged = merge_and(gpt_result, gc_result)
     postfiltered = apply_palatalization_postfilter(word, merged)
     final_result = cross_check_with_dictionary(word, postfiltered)
+    final_result = attach_confidence(final_result)
 
     accepted = [r for r in final_result if r["exists"] is True]
+    accepted, moved_to_review = resolve_suffix_pair_conflicts(accepted)
+    needs_review = [r for r in final_result if r["review_channel"] == "needs_review"]
+    needs_review += moved_to_review
 
     return {
         "word": word,
         "forms": accepted,
+        "needs_review": needs_review,
         "total_candidates": len(candidates),
         "accepted_count": len(accepted),
         "already_diminutive": False,
@@ -194,13 +243,27 @@ def print_result(result: dict) -> None:
     print(f"\n{word} ({result['accepted_count']}/{result['total_candidates']} прошли AND-фильтрацию):")
     if not forms:
         print("  Ни одной формы не подтверждено обеими моделями.")
-        return
+    else:
+        for f in sorted(forms, key=lambda x: x["form"]):
+            connotation = f["connotation"]
+            if isinstance(connotation, list):
+                connotation = " / ".join(connotation)  # модели разошлись в коннотации
+            conf = f.get("confidence")
+            conf_str = f"  confidence={conf['label']}({conf['score']})" if conf else ""
+            pair_note = f"  ⚠ {f['pair_conflict']}" if f.get("pair_conflict") else ""
+            print(f"  {f['form']:<18} suffix={f['suffix']:<12} connotation={connotation}{conf_str}{pair_note}")
 
-    for f in sorted(forms, key=lambda x: x["form"]):
-        connotation = f["connotation"]
-        if isinstance(connotation, list):
-            connotation = " / ".join(connotation)  # модели разошлись в коннотации
-        print(f"  {f['form']:<18} suffix={f['suffix']:<12} connotation={connotation}")
+    # needs_review НЕ смешивается с основным списком — печатается отдельно
+    # и только если непусто, чтобы не засорять обычный вывод.
+    needs_review = result.get("needs_review") or []
+    if needs_review:
+        print(f"\n  На экспертную проверку ({len(needs_review)}, НЕ подтверждено автоматически):")
+        for f in sorted(needs_review, key=lambda x: x["form"]):
+            reasons = "; ".join(f["confidence"]["reasons"]) if f.get("confidence") else ""
+            if f.get("pair_conflict"):
+                reasons = f["pair_conflict"] if not reasons else f"{reasons}; {f['pair_conflict']}"
+            score = f["confidence"]["score"] if f.get("confidence") else "?"
+            print(f"    {f['form']:<18} score={score:<3} — {reasons}")
 
 
 def make_clients() -> tuple[GigaChatClient, object]:

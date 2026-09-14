@@ -26,7 +26,7 @@
 """
 
 import pymorphy2
-from generator import analyze_stem, palatalize, get_fleeting_vowel_stem
+from generator import analyze_stem, palatalize, get_fleeting_vowel_stem, is_in_dictionary
 
 morph = pymorphy2.MorphAnalyzer()
 
@@ -93,20 +93,95 @@ def is_missing_required_vowel_insertion(lemma: str, form: str) -> bool:
     return form.startswith(soft_naive) and not form.startswith(soft_alt)
 
 
+FIRST_DEGREE_MAP = {"ичек": "ик", "очек": "ок", "ёчек": "ёк"}
+
+
+def is_missing_first_degree_form(lemma: str, form: str, suffix_tag: str) -> bool:
+    """
+    True, если form использует суффикс "двойной уменьшительности"
+    (ичек/очек/ёчек), а соответствующая форма ПЕРВОЙ степени (ик/ок/ёк
+    от той же основы) не подтверждена словарём OpenCorpora.
+
+    Обоснование: -очек-/-ёчек-/-ичек- морфологически — это не
+    самостоятельный суффикс, а вторая степень уменьшительности,
+    наслаиваемая на уже существующую форму первой степени (пень->пенёк->
+    пенёчек; звон->звонок->звоночек; муж->мужик->мужичек). Фонологически
+    "домечек" от "дом" построен ничем не хуже, чем "звоночек" от "звон" —
+    оба СИНТАКСИЧЕСКИ корректны. Разница в том, что у "звон"/"пен" есть
+    реальная, употребимая форма первой степени, а у "дом" её нет
+    ("домок"/"домёк" не в ходу) — то есть накладывать вторую степень не
+    на что. Проверяем именно это структурное предусловие, а не саму
+    двойную форму (которую словарь чаще всего и не знает — она реже
+    первой степени, но это не значит, что первая степень тоже отсутствует
+    там, где двойная действительно реальна).
+    """
+    first_degree_ending = FIRST_DEGREE_MAP.get(suffix_tag)
+    if not first_degree_ending:
+        return False  # правило неприменимо к другим суффиксам
+
+    parsed = morph.parse(lemma)[0]
+    gender = parsed.tag.gender
+    if gender != "masc":
+        return False  # ичек/очек/ёчек в generator.py используются только для masc
+
+    stem, kind = analyze_stem(parsed.normal_form, gender)
+    soft = palatalize(stem)
+    base = soft if soft != stem else stem
+
+    first_degree_form = base + first_degree_ending
+    return not is_in_dictionary(first_degree_form)
+
+
+# Лексикализованные исключения для -онок/-ёнок у НЕодушевлённых существительных
+# (реальные слова, где суффикс закрепился исторически, хотя по общему правилу
+# суффикс продуктивен для детёнышей животных). Расширять по мере обнаружения.
+ONOK_INANIMATE_EXCEPTIONS = {"бочка", "кадка"}
+
+
+def is_animacy_mismatch(lemma: str, suffix_tag: str) -> bool:
+    """
+    True, если суффикс "-онок"/"-ёнок" применён к НЕодушевлённому
+    существительному без известного исключения.
+
+    Обоснование: -онок/-ёнок в русском продуктивен почти исключительно
+    для детёнышей животных (медвежонок, котёнок) — это грамматическая
+    категория, а не просто орфографический паттерн, и pymorphy2 уже даёт
+    готовый признак одушевлённости (tag.animacy), не нужно ничего
+    выдумывать. Для неодушевлённых предметов ("дом", "стол") эта форма
+    в норме не образуется, за исключением узкого списка лексикализованных
+    слов (бочонок и т.п.).
+    """
+    if suffix_tag != "онок":
+        return False
+    if lemma in ONOK_INANIMATE_EXCEPTIONS:
+        return False
+
+    parsed = morph.parse(lemma)[0]
+    return parsed.tag.animacy == "inan"
+
+
 def apply_palatalization_postfilter(lemma: str, llm_results: list[dict]) -> list[dict]:
     """
     Принимает вывод filter_candidates() (после LLM-фильтрации) и
-    дополнительно обнуляет exists=True там, где сработало любое из двух
-    правил (is_missing_required_palatalization ИЛИ
-    is_missing_required_vowel_insertion) — независимо от того, что решила
+    дополнительно обнуляет exists=True там, где сработало любое из
+    четырёх детерминированных правил — независимо от того, что решила
     LLM. Помечает такие записи явным флагом "postfilter_rejected", чтобы
     это было видно в данных, а не выглядело как решение LLM.
+
+    Правила 1-2 (чередования) — фонологические: форма грамматически
+    неверна независимо от базового слова. Правила 3-4 (первая степень,
+    одушевлённость) — структурные/грамматические: форма сама по себе
+    произносима и "похожа" на слово, но нарушает предусловие применения
+    суффикса к ЭТОЙ конкретной лемме.
     """
     result = []
     for r in llm_results:
+        suffix_tag = r.get("suffix")
         flagged = r["exists"] and (
             is_missing_required_palatalization(lemma, r["form"])
             or is_missing_required_vowel_insertion(lemma, r["form"])
+            or is_missing_first_degree_form(lemma, r["form"], suffix_tag)
+            or is_animacy_mismatch(lemma, suffix_tag)
         )
         entry = dict(r)
         entry["postfilter_rejected"] = flagged

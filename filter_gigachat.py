@@ -160,12 +160,13 @@ if __name__ == "__main__":
     from generator import gen_candidates
 
     client = GigaChatClient(
-        authorization_key=os.environ["GIGACHAT_AUTH_KEY"],
+        # authorization_key=os.environ["GIGACHAT_AUTH_KEY"],
+        authorization_key="MDE5ZjE0NzgtZDQxNy03MzZkLTgzZDQtYTQyZjViMWE1MWExOjFhOGYxZTI0LTE2MzMtNDMzNS1hNzdhLTMyZjdlMmMwMGRlZA==",
         scope="GIGACHAT_API_PERS",
         model="GigaChat-2",
     )
 
-    for word in ["актриса", "рука", "дождь"]:
+    for word in ["земля", "рука", "дождь"]:
         candidates = gen_candidates(word)
         filtered = filter_candidates(client, word, candidates)
         print(f"\n{word}:")
