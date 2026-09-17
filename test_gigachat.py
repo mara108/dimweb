@@ -1043,7 +1043,7 @@ def generate_diminutives(query_word: str, top_k: int = 5) -> Dict:
 
 def main():
     JSON_PATH = "diminutives_experiment_full.json"
-    API_KEY = "MDE5ZjE0NzgtZDQxNy03MzZkLTgzZDQtYTQyZjViMWE1MWExOjFhOGYxZTI0LTE2MzMtNDMzNS1hNzdhLTMyZjdlMmMwMGRlZA=="  # Замените на ваш ключ
+    API_KEY = ""  # Замените на ваш ключ
 
     initialize_system(JSON_PATH, API_KEY)
 
