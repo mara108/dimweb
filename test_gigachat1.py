@@ -1,17 +1,18 @@
 import json
+import os
 import re
 import time
 import uuid
 import warnings
 import requests
 from typing import List, Dict, Tuple, Optional
-
+from dotenv import load_dotenv
 from generator import (
     get_noun_parse, analyze_stem, is_in_dictionary,
     palatalize, get_fleeting_vowel_stem, EXCEPTIONS,
     gen_candidates,
 )
-
+load_dotenv()
 # Подавляем SSL-предупреждения
 warnings.filterwarnings("ignore", category=requests.packages.urllib3.exceptions.InsecureRequestWarning)
 
@@ -1013,7 +1014,7 @@ def generate_diminutives(query_word: str, top_k: int = 5) -> Dict:
 
 def main():
     JSON_PATH = "diminutives_experiment_full.json"
-    API_KEY = ""  # Замените на ваш ключ
+    API_KEY = os.getenv('LLM_GIGA_CHAT_AUTH_KEY')
 
     initialize_system(JSON_PATH, API_KEY)
 
