@@ -177,58 +177,53 @@ def validate_and_normalize(parsed: dict, original_forms: set[str]) -> list[dict]
 
     return validated
 
+def _ask_llm(call_fn, lemma: str, candidates: list[dict], max_retries: int) -> dict:
+    """Один раунд запроса -> {форма: проверенная запись}. При сбое разбора вернёт {}."""
+    forms = {c["form"] for c in candidates}
+    user_prompt = build_user_prompt(lemma, candidates)
+    last_error = None
+    for _ in range(max_retries + 1):
+        try:
+            parsed = json.loads(strip_code_fences(call_fn(SYSTEM_PROMPT, user_prompt)))
+            return {v["form"]: v for v in validate_and_normalize(parsed, forms)}
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            last_error = e
+    print(f"[llm_filter_core] Не удалось получить корректный ответ для '{lemma}' "
+          f"после {max_retries + 1} попыток: {last_error}")
+    return {}
 
-def filter_candidates(call_fn, lemma: str, candidates: list[dict], max_retries: int = 2) -> list[dict]:
+
+def filter_candidates(call_fn, lemma: str, candidates: list[dict],
+                      max_retries: int = 2, missing_chunk: int = 10) -> list[dict]:
     """
-    Провайдеро-независимая логика фильтрации.
-
-    call_fn: callable(system_prompt: str, user_prompt: str) -> str
-        Обёртка над конкретным API (OpenAI через LangChain, GigaChat через
-        requests, ...), которая просто возвращает сырой текстовый ответ модели.
-
-    Возвращает список:
-    [{"form": ..., "suffix": ..., "exists": ..., "connotation": ..., "note": ...}, ...]
-
-    Формы, которые не удалось корректно оценить (сбой парсинга после всех
-    попыток), возвращаются с exists=None — явный сигнал "не проверено",
-    а не тихая потеря данных.
+    Провайдеро-независимая фильтрация. Формы, которые модель пропустила в ответе,
+    дозапрашиваются отдельными небольшими пачками (один раунд). Если и после
+    этого вердикта нет — exists=None («не проверено»).
     """
     if not candidates:
         return []
 
-    original_forms = {c["form"] for c in candidates}
-    user_prompt = build_user_prompt(lemma, candidates)
+    by_form = _ask_llm(call_fn, lemma, candidates, max_retries)
 
-    last_error = None
-    validated = None
-    for attempt in range(max_retries + 1):
-        try:
-            raw_response = call_fn(SYSTEM_PROMPT, user_prompt)
-            raw = strip_code_fences(raw_response)
-            parsed = json.loads(raw)
-            validated = validate_and_normalize(parsed, original_forms)
-            break
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            last_error = e
-            validated = None
+    missing = [c for c in candidates if c["form"] not in by_form]
+    for i in range(0, len(missing), missing_chunk):
+        by_form.update(_ask_llm(call_fn, lemma, missing[i:i + missing_chunk], max_retries=0))
 
-    if validated is None and last_error is not None:
-        print(f"[llm_filter_core] Не удалось получить корректный ответ для '{lemma}' "
-              f"после {max_retries + 1} попыток: {last_error}")
-
-    by_form = {v["form"]: v for v in validated} if validated else {}
+    still_missing = [c["form"] for c in candidates if c["form"] not in by_form]
+    if still_missing:
+        print(f"[llm_filter_core] '{lemma}': без вердикта осталось "
+              f"{len(still_missing)} из {len(candidates)}: {still_missing[:10]}")
 
     result = []
     for c in candidates:
-        llm_result = by_form.get(c["form"])
+        r = by_form.get(c["form"])
         result.append({
             "form": c["form"],
             "suffix": c["suffix"],
-            "exists": llm_result["exists"] if llm_result else None,
-            "connotation": llm_result["connotation"] if llm_result else None,
-            "meaning": llm_result.get("meaning") if llm_result else None,
+            "exists": r["exists"] if r else None,
+            "connotation": r["connotation"] if r else None,
+            "meaning": r.get("meaning") if r else None,
             "note": c["note"],
             "in_opencorpora": c.get("in_opencorpora", False),
         })
-
     return result

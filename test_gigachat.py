@@ -1050,8 +1050,7 @@ def main():
     initialize_system(JSON_PATH, API_KEY)
 
     test_words = [
-        "слон", "нога", "дело",
-        "дом", '', "свинья"
+        "медведь", "нога", "стол"
     ]
 
     for word in test_words:

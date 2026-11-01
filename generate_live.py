@@ -266,10 +266,29 @@ def print_result(result: dict) -> None:
             print(f"    {f['form']:<18} score={score:<3} — {reasons}")
 
 
+REQUIRED_ENV_VARS = [
+    "LLM_GIGA_CHAT_AUTH_KEY", "LLM_GIGA_CHAT_MODEL_NAME",
+    "LLM_OPEN_AI_API_KEY", "LLM_OPEN_AI_MODEL_NAME", "LLM_OPEN_AI_URL",
+]
+
+
 def make_clients() -> tuple[GigaChatClient, object]:
     """Создаёт обоих клиентов один раз — переиспользуйте между вызовами
-    generate_diminutives(), не создавайте заново на каждое слово."""
+    generate_diminutives(), не создавайте заново на каждое слово.
+
+    Проверяем переменные окружения ЗАРАНЕЕ и явно — иначе при
+    отсутствующем ключе ошибка вылезет позже, на первом HTTP-запросе к
+    LLM, с неинформативным сообщением (NoneType/ошибка авторизации)
+    вместо понятного "не задана переменная X".
+    """
     from langchain_openai import ChatOpenAI
+
+    missing = [v for v in REQUIRED_ENV_VARS if not os.getenv(v)]
+    if missing:
+        raise RuntimeError(
+            f"Не заданы переменные окружения: {', '.join(missing)}. "
+            f"Проверьте .env и что load_dotenv() вызван до make_clients()."
+        )
 
     gigachat_client = GigaChatClient(
         authorization_key=os.getenv('LLM_GIGA_CHAT_AUTH_KEY'),
@@ -281,6 +300,9 @@ def make_clients() -> tuple[GigaChatClient, object]:
         model=os.getenv("LLM_OPEN_AI_MODEL_NAME"),
         base_url=os.getenv("LLM_OPEN_AI_URL"),
         model_kwargs={"response_format": {"type": "json_object"}},
+        timeout=90.0,  # Защита от зависаний (YandexGPT Pro отвечает ~8-10 сек)
+        max_retries=1,  # Не долбить сервер Яндекса бесконечно при ошибке
+        max_tokens=3000,  # Защита от обрезки JSON (в тесте вы использовали именно 3000
     )
     return gigachat_client, gpt_llm
 

@@ -5,5 +5,5 @@ load_dotenv()
 gigachat_client, gpt_llm = make_clients()  # один раз при старте приложения
 
 # на каждый запрос пользователя:
-result = generate_diminutives(gigachat_client, gpt_llm, "рука")
+result = generate_diminutives(gigachat_client, gpt_llm, "дом")
 print_result(result)

@@ -121,7 +121,16 @@ class GigaChatClient:
                 timeout=60,
             )
 
-        response = _do_request(token)
+        #response = _do_request(token)
+        response = None
+        for attempt in range(4):  # 1 запрос + 3 повтора с нарастающей паузой
+            try:
+                response = _do_request(token)
+                break
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+                if attempt == 3:
+                    raise
+                time.sleep(2 * (attempt + 1) ** 2)  # 2, 8, 18 с
         if response.status_code == 401:
             # токен мог истечь между проверкой и запросом — обновляем один раз и повторяем
             token = self._fetch_token()

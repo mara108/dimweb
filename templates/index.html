@@ -1,102 +1,482 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Генератор диминутивов</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dimi-Service — подбор диминутивов</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #f1f5f9;
+    --ink: #0f172a;
+    --body: #334155;
+    --subtitle: #475569;
+    --note: #64748b;
+    --small: #94a3b8;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --card: #ffffff;
+    --card-border: #e2e8f0;
+    --inner: #f8fafc;
+    --input-border: #cbd5e1;
+    --header: #1e293b;
+    --green: #16a34a;
+    --green-dark: #166534;
+    --green-bg: #f0fdf4;
+    --green-border: #bbf7d0;
+    --amber: #d97706;
+    --purple: #7c3aed;
+  }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  .container { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
 
-    <style>
+  /* ---------- шапка ---------- */
+  header { background: var(--header); color: #fff; }
+  header .container {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px;
+  }
+  .logo { color: #fff; font-weight: 700; font-size: 20px; text-decoration: none; }
+  nav { display: flex; align-items: center; gap: 20px; font-size: 13px; color: #cbd5e1; }
+  nav a { color: #93c5fd; text-decoration: none; }
+  nav a:hover { text-decoration: underline; }
 
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 20px;
-        }
+  /* ---------- hero ---------- */
+  .hero { padding: 28px 0 4px; }
+  .hero h1 { font-size: 34px; font-weight: 700; margin: 0 0 14px; color: var(--ink); }
+  .hero p  { font-size: 15px; color: var(--subtitle); margin: 0 0 6px; }
 
-        input {
-            width: 300px;
-            padding: 10px;
-        }
+  /* ---------- секции ---------- */
+  section { margin: 28px 0; }
+  h2 { font-size: 22px; font-weight: 600; margin: 0 0 12px; color: var(--ink); }
+  h3 { font-size: 17px; font-weight: 600; margin: 0 0 10px; color: var(--ink); }
 
-        button {
-            padding: 10px 20px;
-        }
+  /* ---------- как работает ---------- */
+  .how-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 720px) { .how-grid { grid-template-columns: 1fr; } }
+  .how-card {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 20px;
+  }
+  .how-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 700; font-size: 14px;
+    flex: 0 0 32px;
+  }
+  .how-card .card-title { font-size: 17px; font-weight: 600; }
+  .how-card p { font-size: 13px; color: var(--note); margin: 0 0 8px; }
+  .how-card p.small { font-size: 12px; color: var(--small); margin: 8px 0 0; }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
+  /* ---------- панели ---------- */
+  .panel {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 22px;
+  }
+  .panel .note { font-size: 13px; color: var(--note); margin: 0 0 6px; }
 
-        th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
-        }
+  .search-row {
+    display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+    margin-top: 14px;
+  }
+  .search-row input[type=text] {
+    flex: 1 1 300px; min-width: 220px;
+    padding: 11px 14px; font-size: 15px;
+    border: 1px solid var(--input-border); border-radius: 8px; outline: none;
+  }
+  .search-row input[type=text]:focus { border-color: var(--accent); }
+  .search-row button {
+    background: var(--accent); color: #fff; border: 0;
+    padding: 11px 20px; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .search-row button:hover { background: var(--accent-hover); }
+  .search-row button.ghost {
+    background: transparent; color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  .search-row button.ghost:hover { background: #eaf0ff; }
+  .download-link { font-size: 13px; color: var(--accent); text-decoration: none; }
+  .download-link:hover { text-decoration: underline; }
 
-        th {
-            background: #f3f3f3;
-        }
+  /* ---------- результаты генерации ---------- */
+  .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 720px) { .results-grid { grid-template-columns: 1fr; } }
 
-    </style>
+  .inner-card {
+    background: var(--inner); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 18px;
+  }
+  .inner-card h3 { font-size: 15px; margin: 0 0 14px; }
 
+  .form-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; padding: 8px 0;
+  }
+  .form-row + .form-row { border-top: 1px solid #eef2f7; }
+  .form-row .form { font-size: 14px; color: var(--ink); }
+  .form-row .form small { color: var(--small); font-size: 11px; margin-left: 6px; }
+  .confidence { font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .confidence-high { color: var(--green); }
+  .confidence-med  { color: var(--amber); }
+  .confidence-low  { color: var(--note); }
+
+  /* стили в правой колонке */
+  .style-group { margin-bottom: 14px; }
+  .style-group:last-child { margin-bottom: 0; }
+  .style-group .style-label {
+    font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;
+  }
+  .style-group .style-forms { font-size: 14px; color: var(--ink); }
+
+  .divider { height: 1px; background: var(--card-border); margin: 14px 0; }
+
+  .expert-note { font-size: 13px; font-weight: 600; color: var(--ink); margin: 0 0 4px; }
+  .expert-note + p { font-size: 12px; color: var(--note); margin: 0; }
+
+  /* ---------- карточка словаря ---------- */
+  .dict-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px;
+  }
+  @media (max-width: 600px) { .dict-grid { grid-template-columns: 1fr; } }
+  .dict-item {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 10px; padding: 8px 0;
+    border-bottom: 1px solid #eef2f7;
+  }
+  .dict-item .form { font-size: 14px; color: var(--ink); }
+  .dict-item .form small { color: var(--small); font-size: 11px; margin-left: 6px; }
+  .dict-item .tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 6px; white-space: nowrap;
+  }
+  .tag-lask { background: #dcfce7; color: #166534; }
+  .tag-pren { background: #fee2e2; color: #991b1b; }
+  .tag-neut { background: #e0e7ff; color: #3730a3; }
+  .tag-unk  { background: #f1f5f9; color: #475569; }
+  .tag-mixed{ background: #fef3c7; color: #92400e; }
+
+  /* ---------- сопоставление источников ---------- */
+  .compare-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  }
+  @media (max-width: 720px) { .compare-grid { grid-template-columns: 1fr; } }
+  .compare-item {
+    background: var(--inner); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 14px; font-size: 13px; color: var(--body);
+  }
+  .compare-item .compare-label { font-weight: 600; margin-bottom: 6px; }
+  .compare-label.both      { color: var(--green); }
+  .compare-label.only-dict { color: var(--amber); }
+  .compare-label.only-gpt  { color: var(--accent); }
+
+  /* ---------- принятые варианты ---------- */
+  .accepted {
+    background: var(--green-bg); border: 1px solid var(--green-border);
+    border-radius: 10px; padding: 16px;
+  }
+  .accepted h3 { color: var(--green-dark); font-size: 14px; margin: 0 0 6px; }
+  .accepted p  { color: var(--green-dark); font-size: 13px; margin: 0; }
+
+  /* ---------- прочее ---------- */
+  .muted { color: var(--note); font-size: 14px; margin: 0; }
+  .flash { padding: 10px 14px; border-radius: 8px; margin: 16px 0; font-size: 14px; }
+  .flash.success { background: #d4f5e0; color: #14532d; }
+  .flash.danger  { background: #ffd7d7; color: #7f1d1d; }
+  .flash.warning { background: #fff2cc; color: #78350f; }
+
+  /* ---------- подвал ---------- */
+  footer {
+    background: var(--header); color: #cbd5e1;
+    text-align: center; padding: 20px 0; margin-top: 40px; font-size: 13px;
+  }
+  footer a { color: #93c5fd; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer .line + .line { margin-top: 6px; }
+</style>
 </head>
 <body>
 
-<h1>Генератор диминутивов</h1>
+<!-- ================= HEADER ================= -->
+<header>
+  <div class="container">
+    <a class="logo" href="{{ url_for('index') }}">Dimi-Service</a>
+    <nav>
+      {% if current_user is defined and current_user.is_authenticated %}
+        <span>Привет, {{ current_user.username }}</span>
+        <a href="{{ url_for('logout') }}">Выйти</a>
+      {% else %}
+        <a href="{{ url_for('login') }}">Войти</a>
+        <a href="{{ url_for('register') }}">Регистрация</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>
 
-<form method="post">
+<main class="container">
 
-    <input
-            type="text"
-            name="word"
-            placeholder="Введите слово"
-            value="{{ word }}"
-            required
-    >
-
-    <button type="submit">
-        Найти
-    </button>
-
-</form>
-
-{% if result %}
-
-<h2>
-    Слово: {{result.lemma}}
-</h2>
-
-<table>
-
-    <tr>
-        <th>Форма</th>
-        <th>Суффикс</th>
-        <th>Словарная</th>
-        <th>GPT</th>
-        <th>Баллы</th>
-    </tr>
-
-    {% for item in result.diminutives %}
-
-    <tr>
-
-        <td>{{ item.form }}</td>
-
-        <td>{{ item.suffix }}</td>
-
-        <td>{{ item.dictionary_word }}</td>
-
-        <td>{{ item.source_gpt }}</td>
-
-        <td>{{ item.score }}</td>
-
-    </tr>
-
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="flash {{ cat }}">{{ msg }}</div>
     {% endfor %}
+  {% endwith %}
 
-</table>
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <h1>Подбор диминутивов онлайн</h1>
+    <p>Сервис принимает <b>только имена существительные</b>.</p>
+    <p>Сначала слово можно проверить в словаре OpenCorpora — это бесплатно и мгновенно.</p>
+    <p>Если слова там нет, можно запустить генерацию вариантов (платные запросы к языковым моделям).</p>
+    <p class="muted" style="font-size:13px;margin-top:10px;">
+      Авторизация не требуется — поиск и генерация доступны всем.
+    </p>
+  </section>
 
-{% endif %}
+  <!-- ================= КАК РАБОТАЕТ ================= -->
+  <section>
+    <h2>Как работает сервис</h2>
+    <div class="how-grid">
+
+      <div class="how-card">
+        <div class="how-head">
+          <span class="step-num">1</span>
+          <span class="card-title">Поиск в словаре</span>
+        </div>
+        <p>Бесплатно и мгновенно. Получаем варианты литературных форм из словаря OpenCorpora.</p>
+        <p class="small">
+          Также есть возможность скачать словарь, где представлены варианты диминутивов
+          для слов из списка 1000 самых частотных существительных русского языка.
+        </p>
+      </div>
+
+      <div class="how-card">
+        <div class="how-head">
+          <span class="step-num">2</span>
+          <span class="card-title">Генерация вариантов</span>
+        </div>
+        <p>Платные запросы к языковым моделям.</p>
+        <p>
+          Результат записывается в словарь современных разговорных диминутивов.
+          Поэтому сначала нужно сделать поиск в этом словаре, и в случае отрицательного
+          ответа ввести слово в поле для генерации.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ================= БЛОК 1: СЛОВАРЬ ================= -->
+  <section class="panel">
+    <h2>Введите слово</h2>
+    <p class="note">Поиск литературных форм на базе словаря OpenCorpora.</p>
+    <p class="note">
+      Вы можете <a class="download-link" href="{{ url_for('download_dictionary') }}">скачать словарь</a>
+      и посмотреть все формы локально или ввести нужное слово.
+    </p>
+
+    <form action="{{ url_for('index') }}" method="post" class="search-row">
+      <input type="hidden" name="mode" value="dictionary">
+      <input type="text" name="word" placeholder="Введите существительное…"
+             value="{{ word if mode == 'dictionary' else '' }}"
+             autocomplete="off" required>
+      <button type="submit">Найти в словаре</button>
+      <a class="download-link" href="{{ url_for('download_dictionary') }}">⬇ Скачать словарь</a>
+    </form>
+  </section>
+
+  <!-- ================= БЛОК 2: ГЕНЕРАЦИЯ ================= -->
+  <section class="panel">
+    <h2>Генерация разговорных форм с помощью языковых моделей</h2>
+
+    <form action="{{ url_for('index') }}" method="post" class="search-row">
+      <input type="hidden" name="mode" value="generate">
+      <input type="text" name="word" placeholder="Введите существительное…"
+             value="{{ word if mode == 'generate' else '' }}"
+             autocomplete="off" required>
+      <button type="submit">Сгенерировать</button>
+    </form>
+  </section>
+
+  <!-- ================= РЕЗУЛЬТАТЫ СЛОВАРЯ ================= -->
+  {% if result and mode == 'dictionary' %}
+    {% set dict_forms = result.diminutives | selectattr('source_dictionary') | list %}
+    <section class="panel">
+      <h2>📖 Результаты поиска по словарю для «{{ result.lemma }}»</h2>
+
+      {% if dict_forms %}
+        <div class="dict-grid">
+          {% for d in dict_forms %}
+            {% set hint = (d.styles[0] | lower) if d.styles else '' %}
+            {% if 'ласк' in hint and 'пренеб' in hint %}
+              {% set tag_cls, tag_text = 'tag-mixed', d.styles[0] %}
+            {% elif 'ласк' in hint %}
+              {% set tag_cls, tag_text = 'tag-lask', 'ласкательное' %}
+            {% elif 'пренебр' in hint %}
+              {% set tag_cls, tag_text = 'tag-pren', 'пренебрежительное' %}
+            {% elif 'нейтр' in hint %}
+              {% set tag_cls, tag_text = 'tag-neut', 'нейтральное' %}
+            {% elif 'неизв' in hint %}
+              {% set tag_cls, tag_text = 'tag-unk', 'неизвестно' %}
+            {% else %}
+              {% set tag_cls, tag_text = 'tag-unk', (d.styles[0] if d.styles else '—') %}
+            {% endif %}
+            <div class="dict-item">
+              <span class="form">
+                {{ d.form }}
+                {% if d.suffix %}<small>-{{ d.suffix }}-</small>{% endif %}
+              </span>
+              <span class="tag {{ tag_cls }}">{{ tag_text }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">
+          В словаре форм не найдено. Попробуйте генерацию во втором блоке.
+        </p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <!-- ================= РЕЗУЛЬТАТЫ ГЕНЕРАЦИИ ================= -->
+  {% if result and mode == 'generate' %}
+    {% set dict_forms = result.diminutives | selectattr('source_dictionary') | list %}
+    {% set gen_forms  = result.diminutives | selectattr('source_gpt') | list %}
+
+    <section>
+      <h2>Результаты генерации для «{{ result.lemma }}»</h2>
+
+      <div class="results-grid">
+
+        <!-- ЛЕВАЯ КОЛОНКА: постфильтр + уверенность -->
+        <div class="inner-card">
+          <h3>gpt-4o-mini и GigaChat, постфильтр, оценка уверенности</h3>
+
+          {% if gen_forms %}
+            {% for d in gen_forms[:8] %}
+              {% set conf = 'высокая' if d.score >= 80 else ('средняя' if d.score >= 50 else 'низкая') %}
+              {% set cls  = 'confidence-high' if d.score >= 80 else ('confidence-med' if d.score >= 50 else 'confidence-low') %}
+              <div class="form-row">
+                <span class="form">
+                  {{ d.form }}
+                  {% if d.suffix %}<small>-{{ d.suffix }}-</small>{% endif %}
+                </span>
+                <span class="confidence {{ cls }}">уверенность: {{ conf }} ({{ d.score }})</span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p class="muted">Формы не сгенерированы.</p>
+          {% endif %}
+
+          <div class="divider"></div>
+
+          <p class="expert-note">🧪 На экспертную проверку</p>
+          <p>разногласия моделей — не входят в основной список</p>
+        </div>
+
+        <!-- ПРАВАЯ КОЛОНКА: GigaChat (свободная генерация) -->
+        <div class="inner-card">
+          <h3>GigaChat (свободная генерация)</h3>
+
+          {% if gen_forms %}
+            {% set styles_map = {'Уменьшительные': [], 'Ласкательные': [], 'Пренебрежительные': []} %}
+            {% for d in gen_forms %}
+              {% set s = (d.styles[0] | lower) if d.styles else '' %}
+              {% if 'ласк' in s %}
+                {% if styles_map.update({'Ласкательные': styles_map['Ласкательные'] + [d.form]}) %}{% endif %}
+              {% elif 'пренебр' in s %}
+                {% if styles_map.update({'Пренебрежительные': styles_map['Пренебрежительные'] + [d.form]}) %}{% endif %}
+              {% else %}
+                {% if styles_map.update({'Уменьшительные': styles_map['Уменьшительные'] + [d.form]}) %}{% endif %}
+              {% endif %}
+            {% endfor %}
+
+            {% for style, forms in styles_map.items() %}
+              {% if forms %}
+              <div class="style-group">
+                <div class="style-label">{{ style }}:</div>
+                <div class="style-forms">{{ forms | join(', ') }}</div>
+              </div>
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            <p class="muted">Формы не сгенерированы.</p>
+          {% endif %}
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= СОПОСТАВЛЕНИЕ ИСТОЧНИКОВ ================= -->
+    {% set both      = result.diminutives | selectattr('source_dictionary') | selectattr('source_gpt') | list %}
+    {% set only_dict = result.diminutives | selectattr('source_dictionary') | rejectattr('source_gpt') | list %}
+    {% set only_gpt  = result.diminutives | rejectattr('source_dictionary') | selectattr('source_gpt') | list %}
+
+    <section class="panel">
+      <h3>Сопоставление источников</h3>
+      <div class="compare-grid">
+
+        <div class="compare-item">
+          <div class="compare-label both">✅ оба</div>
+          {% if both %}
+            {{ both | map(attribute='form') | join(', ') }}
+          {% else %}
+            <span class="muted">нет</span>
+          {% endif %}
+        </div>
+
+        <div class="compare-item">
+          <div class="compare-label only-dict">🔶 только словарь</div>
+          {% if only_dict %}
+            {{ only_dict | map(attribute='form') | join(', ') }}
+          {% else %}
+            <span class="muted">нет</span>
+          {% endif %}
+        </div>
+
+        <div class="compare-item">
+          <div class="compare-label only-gpt">🔷 только генерация</div>
+          {% if only_gpt %}
+            {{ only_gpt | map(attribute='form') | join(', ') }}
+          {% else %}
+            <span class="muted">нет</span>
+          {% endif %}
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ================= ПРИНЯТЫЕ ВАРИАНТЫ ================= -->
+    {% set accepted = result.diminutives | selectattr('dictionary_word') | selectattr('source_dictionary') | list %}
+    <section>
+      <div class="accepted">
+        <h3>✅ Принятые варианты</h3>
+        {% if accepted %}
+          <p>{{ accepted | map(attribute='form') | join(', ') }}</p>
+        {% else %}
+          <p>Сюда будут помещены принятые формы (совпадают с формами из словаря и признаны корректными).</p>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="container">
+    <div class="line">
+      Источники: OpenCorpora, правила, GPT, GigaChat.
+      Данные предварительные, до проверки лингвистом.
+    </div>
+    <div class="line">
+      <a href="{{ url_for('download_dictionary') }}">Скачать словарь разговорных форм</a>
+    </div>
+  </div>
+</footer>
 
 </body>
 </html>

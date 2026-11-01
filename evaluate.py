@@ -1,11 +1,18 @@
 """
 Подсчёт метрик качества LLM-фильтра относительно эталонных ответов.
 
-Это самостоятельный скрипт для проверки: python evaluate.py.
-Запуск сравнивает gpt-4o-mini, GigaChat-2-Max и их AND-объединение
-(полный пайплайн, как в generate_live.py) на ground_truth_merged.json —
-код внизу файла (if __name__ == "__main__") уже готов к запуску,
-никаких импортов из самого evaluate.py делать не нужно.
+Запуск: python evaluate.py (из папки проекта, с заполненным .env).
+
+Клиенты LLM создаются ТЕМ ЖЕ make_clients() и из того же .env, что и в
+боевом пайплайне (generate_live.py) — поэтому метрики относятся именно к
+той модели, которая реально подключена (сейчас YandexGPT через
+LLM_OPEN_AI_*), а не к прежним захардкоженным клиентам. Ключи в коде
+не хранятся.
+
+Сравниваются: GPT-клиент из make_clients() сам по себе, GigaChat сам по
+себе и AND-объединение с постфильтрами, словарём, оценкой уверенности и
+разрешением конфликтов пар (то, что пользователь реально видит в
+основном списке generate_diminutives()).
 
 Формы с exists=null в эталоне (спорные/неподтверждённые случаи) исключаются
 из подсчёта метрик — лучше честно сократить выборку, чем оценивать модель
@@ -13,6 +20,8 @@
 """
 
 import json
+import os
+import time
 
 
 def load_ground_truth(path: str) -> dict[str, dict[str, dict]]:
@@ -78,7 +87,11 @@ def evaluate_model(
                 accepted = set(gt_entry.get("accepted_connotations") or [gt_entry["connotation"]])
 
                 connotation_total += 1
-                if r.get("connotation") in accepted:
+                got = r.get("connotation")
+                # merge_and при расхождении моделей отдаёт СПИСОК [gpt, gc];
+                # засчитываем, если хотя бы одна оценка допустима
+                got_list = got if isinstance(got, list) else [got]
+                if any(c in accepted for c in got_list):
                     connotation_correct += 1
                 else:
                     connotation_mismatches.append(
@@ -135,53 +148,111 @@ def compare_models(*metrics_list: dict) -> None:
     print(f"\n{'=' * 70}")
     print("СВОДНОЕ СРАВНЕНИЕ")
     print(f"{'=' * 70}")
-    header = f"{'Модель':<20} {'Precision':>10} {'Recall':>10} {'F1':>8} {'Коннотация':>12}"
+    header = f"{'Модель':<48} {'Precision':>10} {'Recall':>10} {'F1':>8} {'Коннотация':>12}"
     print(header)
     print("-" * len(header))
     for m in metrics_list:
         conn = f"{m['connotation_accuracy']:.2f}" if m['connotation_accuracy'] == m['connotation_accuracy'] else "н/д"
-        print(f"{m['model']:<20} {m['precision']:>10.2f} {m['recall']:>10.2f} "
+        print(f"{m['model']:<48} {m['precision']:>10.2f} {m['recall']:>10.2f} "
               f"{m['f1']:>8.2f} {conn:>12}")
 
 
+def short_model_name(name: str) -> str:
+    """Для YandexGPT имя модели — URI вида gpt://<id_каталога>/yandexgpt/latest;
+    ID каталога в отчёт не выводим."""
+    if name and name.startswith("gpt://"):
+        return "/".join(name.split("/")[3:])
+    return name or "?"
+
+
+def collect(label: str, fn, words: list[str]) -> dict[str, list[dict]]:
+    """Прогоняет fn по словам; сбой на одном слове (сеть, лимиты) не должен
+    ронять весь прогон, а платные вызовы не стоит повторять с нуля."""
+    results = {}
+    for i, w in enumerate(words, 1):
+        t = time.time()
+        try:
+            results[w] = fn(w)
+            print(f"  [{i}/{len(words)}] {label}: «{w}» — {time.time() - t:.1f} с", flush=True)
+        except Exception as e:
+            print(f"  [{i}/{len(words)}] {label}: «{w}» — СБОЙ {type(e).__name__}: {str(e)[:120]}", flush=True)
+    return results
+
+
+def count_none(results: dict[str, list[dict]]) -> int:
+    """Вердикты exists=None: ответ модели не удалось разобрать (обрезан,
+    невалидный JSON). Если их много — метрики занижены из-за формата, а не
+    из-за качества модели."""
+    return sum(1 for res in results.values() for r in res if r["exists"] is None)
+
+
+def run_pipeline(word: str, gpt_res: list[dict], gc_res: list[dict]) -> list[dict]:
+    """Те же шаги, что в generate_diminutives(): AND -> постфильтр -> словарь
+    -> оценка уверенности -> разрешение конфликтов пар. Формы, перенесённые
+    в needs_review из-за конфликта «ь», в основном списке не показываются,
+    поэтому для метрик считаются непринятыми (exists=False)."""
+    merged = merge_and(gpt_res, gc_res)
+    postfiltered = apply_palatalization_postfilter(word, merged)
+    final = cross_check_with_dictionary(word, postfiltered)
+    final = attach_confidence(final)
+
+    accepted = [r for r in final if r["exists"] is True]
+    _, moved = resolve_suffix_pair_conflicts(accepted)
+    moved_forms = {r["form"] for r in moved}
+    for r in final:
+        if r["form"] in moved_forms:
+            r["exists"] = False
+    return final
+
+
 if __name__ == "__main__":
-    import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     from generator import gen_candidates
     from filter_gpt import filter_candidates as filter_gpt_candidates
-    from filter_gigachat import GigaChatClient, filter_candidates as filter_gigachat_candidates
-    from langchain_openai import ChatOpenAI
-    from generate_live import merge_and
+    from filter_gigachat import filter_candidates as filter_gigachat_candidates
+    from generate_live import (
+        make_clients, merge_and, attach_confidence,
+    )
     from palatalization_postfilter import apply_palatalization_postfilter
     from opencorpora_check import cross_check_with_dictionary
+    from confidence_score import resolve_suffix_pair_conflicts
+
+    gigachat_client, gpt_llm = make_clients()
+    gpt_name = short_model_name(os.getenv("LLM_OPEN_AI_MODEL_NAME"))
+    gc_name = short_model_name(os.getenv("LLM_GIGA_CHAT_MODEL_NAME"))
+    print(f"GPT-клиент: {gpt_name} | GigaChat: {gc_name}\n")
 
     ground_truth = load_ground_truth("ground_truth_merged.json")
     test_words = list(ground_truth.keys())
+    candidates = {w: gen_candidates(w) for w in test_words}
 
-    llm = ChatOpenAI(
-        api_key="sk-dZ_Sgbz7nnyY8Nc8KdCzcg",
-        temperature=0,
-        model="gpt-4o-mini",
-        base_url="https://api.vsellm.ru/",
-        model_kwargs={"response_format": {"type": "json_object"}},
-    )
-    gpt_results = {w: filter_gpt_candidates(llm, w, gen_candidates(w)) for w in test_words}
-    gpt_metrics = evaluate_model("gpt-4o-mini", gpt_results, ground_truth)
+    print("Запросы к GPT-клиенту:")
+    gpt_results = collect(gpt_name, lambda w: filter_gpt_candidates(gpt_llm, w, candidates[w]), test_words)
+    print("Запросы к GigaChat:")
+    gc_results = collect(gc_name, lambda w: filter_gigachat_candidates(gigachat_client, w, candidates[w]), test_words)
 
-    # GigaChat-2-Max сам по себе (без AND, без постфильтров) — прямое
-    # сравнение с прежним GigaChat-2 на тех же условиях
-    max_client = GigaChatClient("MDE5ZjE0NzgtZDQxNy03MzZkLTgzZDQtYTQyZjViMWE1MWExOjFhOGYxZTI0LTE2MzMtNDMzNS1hNzdhLTMyZjdlMmMwMGRlZA==", model="GigaChat-2-Max")
-    max_results = {w: filter_gigachat_candidates(max_client, w, gen_candidates(w)) for w in test_words}
-    max_metrics = evaluate_model("GigaChat-2-Max (сама по себе)", max_results, ground_truth)
+    # Все три строки считаем на ОДНОМ наборе слов — иначе сбой на отдельных
+    # словах сделал бы сравнение несправедливым.
+    common = [w for w in test_words if w in gpt_results and w in gc_results]
+    skipped = [w for w in test_words if w not in common]
+    print(f"\nСлов в оценке: {len(common)} из {len(test_words)}" +
+          (f" (пропущены из-за сбоев: {', '.join(skipped)})" if skipped else ""))
+    if not common:
+        print("Ни одно слово не обработано обеими моделями — проверьте ключи, сеть и лимиты.")
+        raise SystemExit(1)
 
-    # AND-объединение gpt-4o-mini + GigaChat-2-Max + постфильтры + OpenCorpora —
-    # это ровно тот пайплайн, что реально используется в generate_live.py,
-    # поэтому именно эта строка важнее всего для решения "менять ли модель по умолчанию"
-    and_results = {}
-    for w in test_words:
-        merged = merge_and(gpt_results[w], max_results[w])
-        postfiltered = apply_palatalization_postfilter(w, merged)
-        final = cross_check_with_dictionary(w, postfiltered)
-        and_results[w] = final
-    and_metrics = evaluate_model("AND: gpt-4o-mini + GigaChat-2-Max (полный пайплайн)", and_results, ground_truth)
+    gpt_results = {w: gpt_results[w] for w in common}
+    gc_results = {w: gc_results[w] for w in common}
+    print(f"Вердиктов без разбора (exists=None): GPT-клиент {count_none(gpt_results)}, "
+          f"GigaChat {count_none(gc_results)}")
 
-    compare_models(gpt_metrics, max_metrics, and_metrics)
+    and_results = {w: run_pipeline(w, gpt_results[w], gc_results[w]) for w in common}
+
+    gpt_metrics = evaluate_model(gpt_name, gpt_results, ground_truth)
+    gc_metrics = evaluate_model(f"{gc_name} (сама по себе)", gc_results, ground_truth)
+    and_metrics = evaluate_model(f"AND: {gpt_name} + {gc_name} (полный пайплайн)", and_results, ground_truth)
+
+    compare_models(gpt_metrics, gc_metrics, and_metrics)
