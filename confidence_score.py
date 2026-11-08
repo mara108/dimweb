@@ -51,7 +51,8 @@ def compute_confidence(
     in_opencorpora: bool,
     postfilter_rejected: bool = False,
     suffix_productivity_note: Optional[str] = None,
-) -> dict:
+    allowed_connotations: Optional[set] = None,
+    ) -> dict:
     """
     Возвращает {"score": 0-100, "label": "высокая"/"средняя"/"низкая",
     "reasons": [...]} — с явным объяснением, ЧТО именно повлияло на
@@ -87,7 +88,15 @@ def compute_confidence(
                         and gpt_exists != gc_exists)
 
         if both_exist:
-            if gpt_connotation and gc_connotation and gpt_connotation == gc_connotation:
+            # Для суффиксов с двойной меткой словаря (ласк. / пренебр.)
+            # разные ответы моделей в пределах метки — не расхождение.
+            connotation_agree = bool(gpt_connotation and gc_connotation) and (
+                gpt_connotation == gc_connotation
+                or (allowed_connotations is not None
+                    and gpt_connotation in allowed_connotations
+                    and gc_connotation in allowed_connotations)
+            )
+            if connotation_agree:
                 score = 55
                 reasons.append(
                     "обе модели согласны и коннотация совпадает, НО нет "

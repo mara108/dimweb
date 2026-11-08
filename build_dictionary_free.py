@@ -27,7 +27,7 @@
 
 import json
 import os
-
+from opencorpora_check import is_known_noun_lemma, is_attested
 from generator import gen_candidates
 
 
@@ -48,7 +48,12 @@ def build_free_dictionary(frequency_list_path: str, out_path: str, limit: int | 
     for i, lemma in enumerate(lemmas, 1):
         try:
             candidates = gen_candidates(lemma)
-            accepted = [c for c in candidates if c["in_opencorpora"]]
+            yo_keys = {c["form"].replace("ё", "е") for c in candidates if "ё" in c["form"]}
+            accepted = [
+                c for c in candidates
+                if (is_known_noun_lemma(c["form"]) or is_attested(lemma, c["form"]))
+                and ("ё" in c["form"] or c["form"] not in yo_keys)   # без е-дублей
+            ]
             dictionary[lemma] = {
                 "status": "ok",
                 "forms": [

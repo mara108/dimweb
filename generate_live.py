@@ -18,7 +18,7 @@ AND-LLM сборкой больше не нужен: "Словарь" (1000 ча
 запросу пользователя.
 """
 
-import os
+import os, httpx
 
 from generator import gen_candidates, get_noun_parse
 from filter_gigachat import GigaChatClient, filter_candidates as filter_gigachat_candidates
@@ -131,33 +131,67 @@ def merge_and(gpt_result: list[dict], gc_result: list[dict]) -> list[dict]:
 
     return merged
 
-
-def attach_confidence(final_result: list[dict]) -> list[dict]:
+def attach_confidence(final_result: list[dict], candidates: list[dict] | None = None) -> list[dict]:
     """
-    Добавляет к каждой записи поля "confidence" (score/label/reasons из
-    confidence_score.compute_confidence) и "review_channel"
-    ("accepted"/"needs_review"/"rejected" из classify_for_pipeline).
-
-    КРИТИЧЕСКИ ВАЖНО: НЕ меняет поле "exists" ни для одной записи.
-    review_channel="accepted" присваивается ИСКЛЮЧИТЕЛЬНО на основе уже
-    принятого пайплайном exists=True (результат AND + постфильтр +
-    словарь, без изменений) — score используется только для того, чтобы
-    разложить остальное (exists=False) по "needs_review"/"rejected",
-    а не для того, чтобы задним числом включить в основной вывод формы,
-    которые AND отклонил. См. classify_for_pipeline() в confidence_score.py.
+    Добавляет "confidence" и "review_channel". НЕ меняет "exists".
+    candidates нужны, чтобы взять двойную метку коннотации из словаря
+    аффиксов: ответы моделей в её пределах не считаются расхождением.
     """
+    hint_by_form = {c["form"]: c.get("connotation_hint", "") for c in (candidates or [])}
     for r in final_result:
+        hint = hint_by_form.get(r["form"], "")
+        allowed = set(hint.split(" / ")) if " / " in hint else None
         conf = compute_confidence(
             gpt_exists=r.get("gpt_exists"),
             gc_exists=r.get("gc_exists"),
             gpt_connotation=r.get("gpt_connotation"),
             gc_connotation=r.get("gc_connotation"),
-            in_opencorpora=r.get("in_opencorpora", False),
+            in_opencorpora=r.get("in_opencorpora", False) or r.get("in_attested", False),
             postfilter_rejected=r.get("postfilter_rejected", False),
+            allowed_connotations=allowed,
         )
         r["confidence"] = conf
         r["review_channel"] = classify_for_pipeline(final_exists=r["exists"], confidence=conf)
     return final_result
+
+
+def _norm_yo(form: str) -> str:
+    return form.replace("ё", "е")
+
+
+def collapse_yo_duplicates(rows: list[dict]) -> list[dict]:
+    """Одно написание на слово: е-дубли нужны для поиска, но не для вывода.
+    Предпочитаем вариант с «ё»."""
+    best: dict[str, dict] = {}
+    for r in rows:
+        key = _norm_yo(r["form"])
+        current = best.get(key)
+        if current is None or ("ё" in r["form"] and "ё" not in current["form"]):
+            best[key] = r
+    return list(best.values())
+
+
+def is_unanimous_rejection(r: dict) -> bool:
+    """Обе модели отклонили, и словарь суффиксов форму не подтверждает.
+    Знание OpenCorpora не в счёт — это типичный омограф (конь -> конец, кончик)."""
+    return (r.get("gpt_exists") is False and r.get("gc_exists") is False
+            and not r.get("in_attested"))
+
+def apply_dual_connotation(results: list[dict], candidates: list[dict]) -> list[dict]:
+    """
+    Если словарь аффиксов даёт суффиксу двойную метку («ласкательное /
+    пренебрежительное»), показываем её, а не одиночный выбор моделей:
+    окраска таких суффиксов зависит от контекста (филолог, 2026-11-07).
+    Ответы моделей сохраняются в llm_connotation; gpt_connotation/
+    gc_connotation (для confidence) не трогаем.
+    """
+    hint_by_form = {c["form"]: c["connotation_hint"] for c in candidates}
+    for r in results:
+        hint = hint_by_form.get(r["form"], "")
+        if r.get("exists") and " / " in hint:
+            r["llm_connotation"] = r["connotation"]
+            r["connotation"] = hint
+    return results
 
 
 def generate_diminutives(gigachat_client: GigaChatClient, gpt_llm, word: str, force: bool = False) -> dict:
@@ -213,12 +247,18 @@ def generate_diminutives(gigachat_client: GigaChatClient, gpt_llm, word: str, fo
     merged = merge_and(gpt_result, gc_result)
     postfiltered = apply_palatalization_postfilter(word, merged)
     final_result = cross_check_with_dictionary(word, postfiltered)
-    final_result = attach_confidence(final_result)
-
+    final_result = attach_confidence(final_result, candidates)
+    final_result = apply_dual_connotation(final_result, candidates)
     accepted = [r for r in final_result if r["exists"] is True]
     accepted, moved_to_review = resolve_suffix_pair_conflicts(accepted)
     needs_review = [r for r in final_result if r["review_channel"] == "needs_review"]
     needs_review += moved_to_review
+
+    needs_review = [r for r in needs_review if not is_unanimous_rejection(r)]
+    accepted = collapse_yo_duplicates(accepted)
+    accepted_keys = {_norm_yo(r["form"]) for r in accepted}
+    needs_review = [r for r in collapse_yo_duplicates(needs_review)
+                    if _norm_yo(r["form"]) not in accepted_keys]
 
     return {
         "word": word,
@@ -247,7 +287,8 @@ def print_result(result: dict) -> None:
         for f in sorted(forms, key=lambda x: x["form"]):
             connotation = f["connotation"]
             if isinstance(connotation, list):
-                connotation = " / ".join(connotation)  # модели разошлись в коннотации
+                # не путать с двойной меткой словаря ("X / Y")
+                connotation = " или ".join(connotation) + " (модели разошлись)"
             conf = f.get("confidence")
             conf_str = f"  confidence={conf['label']}({conf['score']})" if conf else ""
             pair_note = f"  ⚠ {f['pair_conflict']}" if f.get("pair_conflict") else ""
@@ -300,9 +341,12 @@ def make_clients() -> tuple[GigaChatClient, object]:
         model=os.getenv("LLM_OPEN_AI_MODEL_NAME"),
         base_url=os.getenv("LLM_OPEN_AI_URL"),
         model_kwargs={"response_format": {"type": "json_object"}},
-        timeout=90.0,  # Защита от зависаний (YandexGPT Pro отвечает ~8-10 сек)
-        max_retries=1,  # Не долбить сервер Яндекса бесконечно при ошибке
-        max_tokens=3000,  # Защита от обрезки JSON (в тесте вы использовали именно 3000
+        #timeout=90.0,  # Защита от зависаний (YandexGPT Pro отвечает ~8-10 сек)
+        #max_retries=1,  # Не долбить сервер Яндекса бесконечно при ошибке
+        #max_tokens=3000,  # Защита от обрезки JSON (в тесте вы использовали именно 3000
+        timeout=httpx.Timeout(90.0, connect=10.0),
+        max_retries=3,  # повтор при обрывах соединения
+        max_tokens=3000,  # запас под JSON-ответ со всеми кандидатами
     )
     return gigachat_client, gpt_llm
 

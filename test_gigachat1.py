@@ -325,7 +325,7 @@ def load_dictionary_free_examples(path: str = "dictionary_free.json") -> None:
         bucket = word_data.setdefault(lemma, {"examples": []})
         examples = bucket["examples"]
         for f in entry["forms"]:
-            type_key = CONNOTATION_TO_TYPE.get(f.get("connotation_hint"))
+            type_key = hint_to_key(f.get("connotation_hint"), CONNOTATION_TO_TYPE)
             if not type_key:
                 continue
             examples.append({
@@ -537,6 +537,13 @@ CONNOTATION_TO_CATEGORY = {
     "пренебрежительное": "пренебрежительные",
 }
 
+def hint_to_key(hint: str, mapping: dict):
+    """Двойная метка «X / Y» -> ключ по первой распознанной части."""
+    for part in (hint or "").split(" / "):
+        key = mapping.get(part.strip())
+        if key:
+            return key
+    return None
 
 def generate_via_generator_rules(word: str, max_per_category: int = 3) -> Dict[str, List[str]]:
     """Делегирует генерацию в уже проверенную (через OpenCorpora) логику
@@ -551,7 +558,9 @@ def generate_via_generator_rules(word: str, max_per_category: int = 3) -> Dict[s
 
     result: Dict[str, List[str]] = {"уменьшительные": [], "ласкательные": [], "пренебрежительные": []}
     for c in candidates_sorted:
-        category = CONNOTATION_TO_CATEGORY.get(c["connotation_hint"])
+        if not c.get("in_opencorpora"):
+            continue  # без LLM-проверки — только словарно подтверждённые
+        category = hint_to_key(c["connotation_hint"], CONNOTATION_TO_CATEGORY)
         if not category or len(result[category]) >= max_per_category:
             continue
         if c["form"] not in result[category]:
@@ -891,6 +900,13 @@ def extract_diminutives_fallback(text: str) -> Optional[Dict]:
         return None
     return {"diminutives": diminutives, "explanation": "(восстановлено из повреждённого JSON)"}
 
+def hint_to_key(hint: str, mapping: dict):
+    """Двойная метка «X / Y» -> ключ по первой распознанной части."""
+    for part in (hint or "").split(" / "):
+        key = mapping.get(part.strip())
+        if key:
+            return key
+    return None
 
 def parse_json_from_response(response: str) -> Dict:
     match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
@@ -1019,8 +1035,7 @@ def main():
     initialize_system(JSON_PATH, API_KEY)
 
     test_words = [
-        "слон", "нога", "дело",
-        "дом", '', "свинья"
+        "слон", "слово", "окно", "море"
     ]
 
     for word in test_words:
